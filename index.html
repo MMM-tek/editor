@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Editor</title>
+    <script>import * as Blockly from 'blockly';</script>
+    <style>
+        body { margin: 0; display: flex; flex-direction: column; height: 100vh; background: #1b1b1b; color: white; font-family: sans-serif; }
+        #header { padding: 10px 20px; background: #2d2d2d; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #3d3d3d; }
+        #blocklyDiv { flex-grow: 1; width: 100%; }
+        .logo { font-weight: bold; color: #4da3ff; font-size: 1.2rem; }
+    </style>
+</head>
+<body>
+
+<div id="header">
+    <div class="logo">BLOCK EDITOR</div>
+    <div id="status">Loading blocks.ts...</div>
+</div>
+
+<div id="blocklyDiv"></div>
+
+<xml id="toolbox" style="display: none">
+    <category name="Commands" colour="#5B67A5" id="cat_ts"></category>
+</xml>
+
+<script>
+// --- PARSER DE TYPESCRIPT A BLOQUES ---
+async function loadTSBlocks() {
+    try {
+        const response = await fetch('blocks.ts');
+        const text = await response.text();
+        const status = document.getElementById('status');
+        
+        // Regex para capturar: //% block="...", //% color="...", function name(params)
+        const blockRegex = /\/\/% block="(.+?)"\s+\/\/% color="(.+?)"\s+export function (\w+)\((.*?)\)/gs;
+        let match;
+
+        while ((match = blockRegex.exec(text)) !== null) {
+            const [full, blockText, color, funcName, paramsRaw] = match;
+            
+            // Analizar parámetros
+            const params = paramsRaw.split(',').filter(p => p.trim()).map(p => {
+                const [pName, pType] = p.split(':').map(s => s.trim());
+                return { name: pName, type: pType };
+            });
+
+            // Crear el bloque en Blockly
+            createBlocklyBlock(funcName, blockText, color, params);
+            
+            // Añadir a la toolbox
+            const blockXml = document.createElement('block');
+            blockXml.setAttribute('type', funcName);
+            document.getElementById('cat_ts').appendChild(blockXml);
+        }
+
+        initBlockly();
+        status.innerText = "Blocks synced from blocks.ts";
+    } catch (e) {
+        document.getElementById('status').innerText = "Error: Use a Local Server";
+    }
+}
+
+function createBlocklyBlock(id, text, color, params) {
+    Blockly.Blocks[id] = {
+        init: function() {
+            let parts = text.split(/%\w+/);
+            let input = this.appendDummyInput();
+            
+            parts.forEach((p, i) => {
+                input.appendField(p.trim());
+                if (i < params.length) {
+                    if (params[i].type === 'string') {
+                        input.appendField(new Blockly.FieldTextInput("..."), params[i].name);
+                    } else {
+                        input.appendField(new Blockly.FieldNumber(0), params[i].name);
+                    }
+                }
+            });
+            this.setPreviousStatement(true, null);
+            this.setNextStatement(true, null);
+            this.setColour(color);
+        }
+    };
+}
+
+function initBlockly() {
+    Blockly.inject('blocklyDiv', {
+        toolbox: document.getElementById('toolbox'),
+        grid: { spacing: 20, length: 3, colour: '#333', snap: true },
+        theme: Blockly.Themes.Dark,
+        trashcan: true
+    });
+}
+
+loadTSBlocks();
+</script>
+</body>
+</html>
