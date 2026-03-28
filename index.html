@@ -2,98 +2,97 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Editor</title>
+    <title>MakeCode Style Editor</title>
+    <!-- Cargamos Blockly -->
     <script>import * as Blockly from 'blockly';</script>
     <style>
-        body { margin: 0; display: flex; flex-direction: column; height: 100vh; background: #1b1b1b; color: white; font-family: sans-serif; }
-        #header { padding: 10px 20px; background: #2d2d2d; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #3d3d3d; }
+        body { margin: 0; display: flex; flex-direction: column; height: 100vh; background: #1e1e1e; font-family: sans-serif; }
+        #header { padding: 15px; background: #2d2d2d; color: white; border-bottom: 2px solid #3d3d3d; font-weight: bold; }
         #blocklyDiv { flex-grow: 1; width: 100%; }
-        .logo { font-weight: bold; color: #4da3ff; font-size: 1.2rem; }
     </style>
 </head>
 <body>
 
-<div id="header">
-    <div class="logo">BLOCK EDITOR</div>
-    <div id="status">Loading blocks.ts...</div>
-</div>
-
+<div id="header">BLOCK EDITOR</div>
 <div id="blocklyDiv"></div>
 
 <xml id="toolbox" style="display: none">
-    <category name="Commands" colour="#5B67A5" id="cat_ts"></category>
+    <category name="Commands" colour="#5B67A5" id="tsCategory"></category>
 </xml>
 
+<script id="blocks-source" type="text/plain">
+/**
+ * DEFINE TUS BLOQUES AQUÍ ABAJO
+ * Usa //% block="texto" y //% color="#hex"
+ */
+
+//% block="say %message"
+//% color="#4a90e2"
+export function say(message: string) {}
+
+//% block="set speed to %value"
+//% color="#e67e22"
+export function setSpeed(value: number) {}
+
+//% block="teleport to x: %x y: %y"
+//% color="#9b59b6"
+export function teleport(x: number, y: number) {}
+</script>
+
 <script>
-// --- PARSER DE TYPESCRIPT A BLOQUES ---
-async function loadTSBlocks() {
-    try {
-        const response = await fetch('blocks.ts');
-        const text = await response.text();
-        const status = document.getElementById('status');
+// --- EL MOTOR QUE CREA LOS BLOQUES ---
+
+function parseAndCreateBlocks() {
+    const source = document.getElementById('blocks-source').innerText;
+    
+    // Buscamos: //% block="...", //% color="...", function nombre(params)
+    const regex = /\/\/% block="(.+?)"\s+\/\/% color="(.+?)"\s+export function (\w+)\((.*?)\)/gs;
+    let match;
+
+    while ((match = regex.exec(source)) !== null) {
+        const [_, blockText, color, funcName, paramsRaw] = match;
         
-        // Regex para capturar: //% block="...", //% color="...", function name(params)
-        const blockRegex = /\/\/% block="(.+?)"\s+\/\/% color="(.+?)"\s+export function (\w+)\((.*?)\)/gs;
-        let match;
+        // Detectar tipos de parámetros (string o number)
+        const params = paramsRaw.split(',').filter(p => p.trim()).map(p => {
+            return p.includes('string') ? 'text' : 'number';
+        });
 
-        while ((match = blockRegex.exec(text)) !== null) {
-            const [full, blockText, color, funcName, paramsRaw] = match;
-            
-            // Analizar parámetros
-            const params = paramsRaw.split(',').filter(p => p.trim()).map(p => {
-                const [pName, pType] = p.split(':').map(s => s.trim());
-                return { name: pName, type: pType };
-            });
+        // Registrar el bloque en Blockly
+        Blockly.Blocks[funcName] = {
+            init: function() {
+                let parts = blockText.split(/%\w+/);
+                let input = this.appendDummyInput();
+                parts.forEach((p, i) => {
+                    input.appendField(p.trim());
+                    if (i < params.length) {
+                        if (params[i] === 'text') {
+                            input.appendField(new Blockly.FieldTextInput("abc"), "VAR" + i);
+                        } else {
+                            input.appendField(new Blockly.FieldNumber(0), "VAR" + i);
+                        }
+                    }
+                });
+                this.setPreviousStatement(true, null);
+                this.setNextStatement(true, null);
+                this.setColour(color);
+            }
+        };
 
-            // Crear el bloque en Blockly
-            createBlocklyBlock(funcName, blockText, color, params);
-            
-            // Añadir a la toolbox
-            const blockXml = document.createElement('block');
-            blockXml.setAttribute('type', funcName);
-            document.getElementById('cat_ts').appendChild(blockXml);
-        }
-
-        initBlockly();
-        status.innerText = "Blocks synced from blocks.ts";
-    } catch (e) {
-        document.getElementById('status').innerText = "Error: Use a Local Server";
+        // Añadir a la toolbox
+        const blockNode = document.createElement('block');
+        blockNode.setAttribute('type', funcName);
+        document.getElementById('tsCategory').appendChild(blockNode);
     }
 }
 
-function createBlocklyBlock(id, text, color, params) {
-    Blockly.Blocks[id] = {
-        init: function() {
-            let parts = text.split(/%\w+/);
-            let input = this.appendDummyInput();
-            
-            parts.forEach((p, i) => {
-                input.appendField(p.trim());
-                if (i < params.length) {
-                    if (params[i].type === 'string') {
-                        input.appendField(new Blockly.FieldTextInput("..."), params[i].name);
-                    } else {
-                        input.appendField(new Blockly.FieldNumber(0), params[i].name);
-                    }
-                }
-            });
-            this.setPreviousStatement(true, null);
-            this.setNextStatement(true, null);
-            this.setColour(color);
-        }
-    };
-}
+// Iniciar
+parseAndCreateBlocks();
 
-function initBlockly() {
-    Blockly.inject('blocklyDiv', {
-        toolbox: document.getElementById('toolbox'),
-        grid: { spacing: 20, length: 3, colour: '#333', snap: true },
-        theme: Blockly.Themes.Dark,
-        trashcan: true
-    });
-}
-
-loadTSBlocks();
+Blockly.inject('blocklyDiv', {
+    toolbox: document.getElementById('toolbox'),
+    theme: Blockly.Themes.Dark,
+    trashcan: true
+});
 </script>
 </body>
 </html>
